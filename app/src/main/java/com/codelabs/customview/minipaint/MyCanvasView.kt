@@ -1,12 +1,13 @@
 package com.codelabs.customview.minipaint
 
+import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Path
+import android.graphics.*
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import androidx.core.content.res.ResourcesCompat
+import kotlin.math.abs
 
 /**
  * to setup the stroke width.
@@ -54,6 +55,24 @@ class MyCanvasView(context: Context) : View(context) {
 
     private var path = Path()
 
+    /**
+     * variables for caching the x and y coordinates of the current touch event
+     */
+    private var motionTouchEventX = 0f
+    private var motionTouchEventY = 0f
+
+    /**
+     * Variables to cache the latest x and y values. After the user stops
+     * moving and lifts their touch, these are the starting point for the
+     * next path (the next segment of the line to draw).
+     */
+    private var currentX = 0f
+    private var currentY = 0f
+
+    private var touchTolerance = ViewConfiguration.get(context).scaledTouchSlop
+
+    private lateinit var frame: Rect
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
 
@@ -68,12 +87,64 @@ class MyCanvasView(context: Context) : View(context) {
         extraCanvas = Canvas(extraBitmap)
         // Specify the background color in which to fill extraCanvas.
         extraCanvas.drawColor(backgroundColor)
+
+        // Calculate a rectangular frame around the picture.
+        val insert = 40
+        frame = Rect(insert, insert, w - insert, h - insert)
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawBitmap(extraBitmap, 0f, 0f, null)
+
+        // Draw a frame around the canvas.
+        canvas.drawRect(frame, paint)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        motionTouchEventX = event.x
+        motionTouchEventY = event.y
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> touchStart()
+            MotionEvent.ACTION_MOVE -> touchMove()
+            MotionEvent.ACTION_UP -> touchUp()
+        }
+        return true
+    }
+
+    private fun touchStart() {
+        // Reset the path.
+        path.reset()
+        // Move to the x-y coordinates of the touch event.
+        path.moveTo(motionTouchEventX, motionTouchEventY)
+        // Assign this property value.
+        currentX = motionTouchEventX
+        currentY = motionTouchEventY
+    }
+
+    private fun touchMove() {
+        val dx = abs(motionTouchEventX - currentX)
+        val dy = abs(motionTouchEventY - currentY)
+        if (dx >= touchTolerance || dy >= touchTolerance) {
+            // QuadTo() adds a quadratic bezier from the last point,
+            // approaching control point (x1, y1), and ending at (x2, y2).
+            path.quadTo(
+                currentX, currentY,
+                (motionTouchEventX + currentX) / 2,
+                (motionTouchEventY + currentY) / 2)
+            currentX = motionTouchEventX
+            currentY = motionTouchEventY
+            // Draw the path in the extra bitmap to cache it.
+            extraCanvas.drawPath(path, paint)
+        }
+        invalidate()
+    }
+
+    private fun touchUp() {
+        // Reset the path so it doesn't get drawn again.
+        path.reset()
+    }
 
 }
